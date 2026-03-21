@@ -21,7 +21,13 @@ const modalContent = document.getElementById('modal-content');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 const btnCancelSettings = document.getElementById('btn-cancel-settings');
 const btnSaveSettings = document.getElementById('btn-save-settings');
+const selectProvider = document.getElementById('select-provider');
 const inputApiKey = document.getElementById('input-api-key');
+const inputBaseUrl = document.getElementById('input-base-url');
+const inputModel = document.getElementById('input-model');
+const providerLink = document.getElementById('provider-link');
+const providerLinkContainer = document.getElementById('provider-link-container');
+const advancedSettings = document.getElementById('advanced-settings');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toast-message');
 
@@ -30,11 +36,56 @@ let isRecording = false;
 let recognition = null;
 let finalTranscript = ''; // Note: with contenteditable, this will be synchronized with DOM
 let qaHistory = [];
-let deepseekApiKey = localStorage.getItem('deepseek_api_key') || '';
 let highlightTimers = {}; // Store timers for question highlights
+
+// AI Configuration
+const AI_PROVIDERS = {
+    deepseek: {
+        baseUrl: 'https://api.deepseek.com/chat/completions',
+        model: 'deepseek-chat',
+        link: 'https://platform.deepseek.com/api_keys',
+        linkText: '获取 DeepSeek API Key'
+    },
+    kimi: {
+        baseUrl: 'https://api.moonshot.cn/v1/chat/completions',
+        model: 'moonshot-v1-8k',
+        link: 'https://platform.moonshot.cn/console/api-keys',
+        linkText: '获取 Kimi API Key'
+    },
+    custom: {
+        baseUrl: '',
+        model: '',
+        link: '',
+        linkText: ''
+    }
+};
+
+let aiConfig = {
+    provider: 'deepseek',
+    apiKey: '',
+    baseUrl: AI_PROVIDERS.deepseek.baseUrl,
+    model: AI_PROVIDERS.deepseek.model
+};
 
 // Load initial state from local storage
 function loadState() {
+    // Load AI Config
+    const savedConfig = localStorage.getItem('ai_config');
+    if (savedConfig) {
+        try {
+            aiConfig = { ...aiConfig, ...JSON.parse(savedConfig) };
+        } catch (e) {
+            console.error('Failed to load AI config', e);
+        }
+    } else {
+        // Fallback for old version
+        const oldKey = localStorage.getItem('deepseek_api_key');
+        if (oldKey) {
+            aiConfig.apiKey = oldKey;
+            saveConfig();
+            localStorage.removeItem('deepseek_api_key');
+        }
+    }
     const savedText = localStorage.getItem('lecture_text');
     if (savedText) {
         finalTextEl.innerHTML = savedText; // Use innerHTML to preserve spans if any
@@ -62,6 +113,10 @@ function loadState() {
 function saveState() {
     localStorage.setItem('lecture_text', finalTextEl.innerHTML); // Save HTML to keep highlights
     localStorage.setItem('lecture_qa', JSON.stringify(qaHistory));
+}
+
+function saveConfig() {
+    localStorage.setItem('ai_config', JSON.stringify(aiConfig));
 }
 
 // Sync plain text state when user edits
@@ -372,10 +427,16 @@ btnFloatingAsk.addEventListener('click', () => {
     }
 });
 
-// Ask DeepSeek API
+// Ask AI API
 async function askDeepSeek(question) {
-    if (!deepseekApiKey) {
-        showToast('请先在设置中配置 DeepSeek API Key', 'error');
+    if (!aiConfig.apiKey) {
+        showToast('请先在设置中配置 API Key', 'error');
+        openSettings();
+        return;
+    }
+
+    if (!aiConfig.baseUrl || !aiConfig.model) {
+        showToast('请在设置中完善接口地址和模型名称', 'error');
         openSettings();
         return;
     }
@@ -399,14 +460,14 @@ async function askDeepSeek(question) {
     scrollToBottom(qaContainer);
 
     try {
-        const response = await fetch('https://api.deepseek.com/chat/completions', {
+        const response = await fetch(aiConfig.baseUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${deepseekApiKey}`
+                'Authorization': `Bearer ${aiConfig.apiKey}`
             },
             body: JSON.stringify({
-                model: 'deepseek-chat',
+                model: aiConfig.model,
                 messages: [
                     {
                         role: 'system',
@@ -543,8 +604,49 @@ function showToast(message, type = 'success') {
     }, 3000);
 }
 
+function updateSettingsUI() {
+    const provider = selectProvider.value;
+    
+    if (provider === 'custom') {
+        advancedSettings.classList.remove('hidden');
+        providerLinkContainer.classList.add('hidden');
+        inputBaseUrl.readOnly = false;
+        inputModel.readOnly = false;
+        inputBaseUrl.classList.remove('bg-gray-50', 'text-gray-500');
+        inputModel.classList.remove('bg-gray-50', 'text-gray-500');
+    } else {
+        const config = AI_PROVIDERS[provider];
+        inputBaseUrl.value = config.baseUrl;
+        inputModel.value = config.model;
+        
+        providerLink.href = config.link;
+        providerLink.innerHTML = `${config.linkText} <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]"></i>`;
+        
+        advancedSettings.classList.remove('hidden');
+        providerLinkContainer.classList.remove('hidden');
+        
+        // Make them read-only visually to indicate they are presets
+        inputBaseUrl.readOnly = true;
+        inputModel.readOnly = true;
+        inputBaseUrl.classList.add('bg-gray-50', 'text-gray-500');
+        inputModel.classList.add('bg-gray-50', 'text-gray-500');
+    }
+}
+
+selectProvider.addEventListener('change', () => {
+    updateSettingsUI();
+    // Clear API key when switching providers (optional, but safer)
+    // inputApiKey.value = ''; 
+});
+
 function openSettings() {
-    inputApiKey.value = deepseekApiKey;
+    selectProvider.value = aiConfig.provider || 'deepseek';
+    inputApiKey.value = aiConfig.apiKey;
+    inputBaseUrl.value = aiConfig.baseUrl;
+    inputModel.value = aiConfig.model;
+    
+    updateSettingsUI();
+
     modalSettings.classList.remove('hidden');
     modalSettings.classList.add('flex');
     // small delay for animation
@@ -565,10 +667,23 @@ function closeSettings() {
 
 function saveSettings() {
     const key = inputApiKey.value.trim();
-    deepseekApiKey = key;
-    localStorage.setItem('deepseek_api_key', key);
+    const provider = selectProvider.value;
+    
+    if (!key) {
+        showToast('API Key 不能为空', 'error');
+        return;
+    }
+
+    aiConfig = {
+        provider: provider,
+        apiKey: key,
+        baseUrl: inputBaseUrl.value.trim(),
+        model: inputModel.value.trim()
+    };
+    
+    saveConfig();
     closeSettings();
-    showToast('API Key 保存成功');
+    showToast('配置保存成功');
 }
 
 function clearAll() {

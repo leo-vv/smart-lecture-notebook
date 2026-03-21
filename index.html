@@ -15,7 +15,10 @@
             <div class="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-lg shadow-md">
                 <i class="fa-solid fa-book-open"></i>
             </div>
-            <h1 class="text-xl font-bold text-gray-800">智能课堂笔记本</h1>
+            <div>
+                <h1 class="text-xl font-bold text-gray-800">智能课堂笔记本</h1>
+                <p class="text-[10px] text-gray-400 mt-0.5 tracking-wide">制作人：leo</p>
+            </div>
         </div>
         <div class="flex items-center gap-4">
             <!-- Recording Status -->
@@ -105,22 +108,50 @@
         <div class="bg-white rounded-xl shadow-2xl w-[480px] overflow-hidden transform transition-all scale-95 opacity-0" id="modal-content">
             <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <i class="fa-solid fa-key text-yellow-500"></i>
-                    DeepSeek API 设置
+                    <i class="fa-solid fa-gear text-blue-500"></i>
+                    AI 模型设置
                 </h3>
                 <button id="btn-close-settings" class="text-gray-400 hover:text-gray-600 transition">
                     <i class="fa-solid fa-xmark text-xl"></i>
                 </button>
             </div>
-            <div class="p-6">
-                <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
-                <input type="password" id="input-api-key" placeholder="sk-..." class="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
-                <p class="text-xs text-gray-500 mt-3 leading-relaxed">
-                    请在此输入您的 DeepSeek API Key。密钥将仅安全地保存在您的浏览器本地（localStorage），不会上传至任何其他服务器。
+            <div class="p-6 space-y-4">
+                <!-- Provider Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">AI 服务商</label>
+                    <select id="select-provider" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-sm">
+                        <option value="deepseek">DeepSeek (推荐)</option>
+                        <option value="kimi">Kimi (Moonshot)</option>
+                        <option value="custom">自定义 (兼容 OpenAI 格式)</option>
+                    </select>
+                </div>
+
+                <!-- API Key -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">API Key <span class="text-red-500">*</span></label>
+                    <input type="password" id="input-api-key" placeholder="sk-..." class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
+                </div>
+
+                <!-- Advanced Settings (Collapsible or just visible for custom) -->
+                <div id="advanced-settings" class="space-y-4 pt-2 border-t border-gray-100">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">接口地址 (Base URL)</label>
+                        <input type="text" id="input-base-url" placeholder="https://api.deepseek.com/chat/completions" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">模型名称 (Model)</label>
+                        <input type="text" id="input-model" placeholder="deepseek-chat" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-2 leading-relaxed">
+                    所有配置仅安全地保存在您的浏览器本地缓存中，不会上传至任何第三方服务器。
                 </p>
-                <a href="https://platform.deepseek.com/api_keys" target="_blank" class="text-xs text-blue-500 hover:underline mt-1 inline-block">
-                    前往 DeepSeek 官网获取 API Key <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]"></i>
-                </a>
+                <div id="provider-link-container" class="mt-1">
+                    <a href="https://platform.deepseek.com/api_keys" id="provider-link" target="_blank" class="text-xs text-blue-500 hover:underline inline-block">
+                        获取 DeepSeek API Key <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]"></i>
+                    </a>
+                </div>
             </div>
             <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
                 <button id="btn-cancel-settings" class="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-md transition font-medium">取消</button>
