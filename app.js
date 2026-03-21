@@ -119,7 +119,7 @@ function initSpeechRecognition() {
                 const text = event.results[i][0].transcript;
                 
                 // Check if it's a question and wrap it
-                if (text.match(/[?？]$/) || text.match(/吗[。，,.]$/)) {
+                if (isTeacherQuestion(text)) {
                     const highlightId = 'hq_' + Date.now() + Math.floor(Math.random() * 1000);
                     const wrappedText = `<span id="${highlightId}" class="question-highlight" data-question="${text.trim()}">${text}</span>`;
                     
@@ -245,6 +245,46 @@ function updateRecordUI() {
 }
 
 // --- Question Extraction & AI Logic ---
+
+// Advanced Question Detection Logic
+function isTeacherQuestion(text) {
+    const cleanText = text.trim();
+    
+    // 1. Length Filter: Ignore very short phrases (usually filler words like "对吧", "是不是")
+    if (cleanText.length <= 4) {
+        return false;
+    }
+
+    // 2. Keyword Dictionaries
+    // Strong question keywords that almost always indicate a question when used in a sentence
+    const strongKeywords = [
+        "为什么", "如何", "怎么", "请解释", "什么原因", 
+        "区别是什么", "有何不同", "哪几种", "什么是", "举个例子"
+    ];
+    
+    // Guiding keywords often used by teachers
+    const guideKeywords = [
+        "同学们想一想", "大家思考一下", "我们来看看", 
+        "谁能告诉我", "能不能", "大家觉得呢", "大家看这里"
+    ];
+
+    // Check if text contains any strong or guide keywords
+    const containsKeyword = [...strongKeywords, ...guideKeywords].some(keyword => cleanText.includes(keyword));
+    
+    // 3. Punctuation fallback (with length protection already applied above)
+    // Ends with question mark or "吗" + punctuation
+    const hasQuestionMark = cleanText.match(/[?？]$/) || cleanText.match(/吗[。，,.]$/);
+
+    // 4. Exclusion list for common rhetorical/filler phrases even if they are long enough
+    const isExcluded = cleanText.match(/^(听懂了吗|对不对|是不是|对吧|能理解吗)[。，,.?？]*$/);
+
+    if (isExcluded) {
+        return false;
+    }
+
+    // Return true if it has a keyword OR ends like a question
+    return containsKeyword || hasQuestionMark;
+}
 
 function bindHighlightEvents() {
     const highlights = finalTextEl.querySelectorAll('.question-highlight');
