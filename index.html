@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能课堂笔记本</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
+    <!-- Top Bar -->
+    <header class="bg-white shadow-sm h-16 flex items-center justify-between px-6 shrink-0 z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center font-bold text-lg shadow-md">
+                <i class="fa-solid fa-book-open"></i>
+            </div>
+            <h1 class="text-xl font-bold text-gray-800">智能课堂笔记本</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <!-- Recording Status -->
+            <div id="recording-status" class="hidden items-center gap-2 text-red-500 font-medium animate-pulse">
+                <div class="w-2.5 h-2.5 bg-red-500 rounded-full"></div>
+                <span id="recording-status-text">正在听写...</span>
+            </div>
+            
+            <button id="btn-record" class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors font-medium shadow-sm">
+                <i class="fa-solid fa-microphone"></i>
+                <span id="text-record">开始录音</span>
+            </button>
+            
+            <button id="btn-export" class="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-md transition-colors font-medium border border-gray-200 shadow-sm">
+                <i class="fa-solid fa-download"></i>
+                导出笔记
+            </button>
+            
+            <button id="btn-clear" class="flex items-center gap-2 px-4 py-2 bg-white hover:bg-red-50 text-gray-700 hover:text-red-600 rounded-md transition-colors font-medium border border-gray-200 shadow-sm">
+                <i class="fa-solid fa-trash-can"></i>
+                清空
+            </button>
+            
+            <button id="btn-settings" class="flex items-center justify-center w-10 h-10 bg-white hover:bg-gray-50 text-gray-600 rounded-full transition-colors border border-gray-200 shadow-sm" title="设置 API Key">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        <!-- Left: Speech to Text (STT) -->
+        <section class="w-2/3 border-r border-gray-200 bg-white flex flex-col relative shadow-[inset_-4px_0_12px_rgba(0,0,0,0.02)]">
+            <div class="px-6 py-4 border-b border-gray-100 bg-white shrink-0 flex justify-between items-center">
+                <div>
+                    <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-800">
+                        <i class="fa-regular fa-comment-dots text-blue-500"></i>
+                        实时听写区
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-1">划选文字后点击弹出的按钮即可手动向 AI 提问</p>
+                </div>
+            </div>
+            
+            <!-- Transcript Container -->
+            <div id="transcript-container" class="flex-1 overflow-y-auto p-8 text-lg leading-loose text-gray-700 pb-32 scroll-smooth selection:bg-blue-200 selection:text-blue-900 relative">
+                <div id="empty-state-transcript" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pointer-events-none">
+                    <i class="fa-solid fa-microphone-lines text-6xl mb-4 text-gray-200"></i>
+                    <p class="text-base">点击上方“开始录音”记录课堂内容</p>
+                    <p class="text-sm mt-3 text-gray-400 max-w-md text-center leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">
+                        <i class="fa-brands fa-edge text-blue-500 mr-1"></i> 强烈推荐使用 <strong>Edge 浏览器</strong> <br>以获得更低延迟、更准确的语音识别体验
+                    </p>
+                </div>
+                <!-- Finalized Text -->
+                <div id="final-text" class="whitespace-pre-wrap outline-none" contenteditable="true"></div><span id="interim-text" class="text-gray-400 italic"></span>
+            </div>
+            
+            <!-- Floating Ask Button -->
+            <button id="btn-floating-ask" class="hidden fixed bg-blue-600 text-white px-4 py-2 rounded-full shadow-xl hover:bg-blue-700 transition transform z-50 flex items-center gap-2 font-medium border border-blue-400">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                AI 解答
+            </button>
+        </section>
+
+        <!-- Right: QA Area -->
+        <section class="w-1/3 bg-gray-50 flex flex-col">
+            <div class="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
+                <h2 class="text-lg font-semibold flex items-center gap-2 text-gray-800">
+                    <i class="fa-solid fa-robot text-purple-500"></i>
+                    智能问答区
+                </h2>
+                <p class="text-xs text-gray-500 mt-1">自动识别的疑问或手动划选的问题及 AI 答案</p>
+            </div>
+            
+            <!-- QA Container -->
+            <div id="qa-container" class="flex-1 overflow-y-auto p-4 space-y-4 pb-20 scroll-smooth">
+                <div id="empty-state-qa" class="h-full flex flex-col items-center justify-center text-gray-400 text-center px-4">
+                    <i class="fa-solid fa-inbox text-5xl mb-4 text-gray-200"></i>
+                    <p>当识别到问题时，<br>AI 的解答将显示在这里</p>
+                </div>
+                <!-- QA Cards will be injected here -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="modal-settings" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-[480px] overflow-hidden transform transition-all scale-95 opacity-0" id="modal-content">
+            <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <i class="fa-solid fa-key text-yellow-500"></i>
+                    DeepSeek API 设置
+                </h3>
+                <button id="btn-close-settings" class="text-gray-400 hover:text-gray-600 transition">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
+                <input type="password" id="input-api-key" placeholder="sk-..." class="w-full px-4 py-2.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
+                <p class="text-xs text-gray-500 mt-3 leading-relaxed">
+                    请在此输入您的 DeepSeek API Key。密钥将仅安全地保存在您的浏览器本地（localStorage），不会上传至任何其他服务器。
+                </p>
+                <a href="https://platform.deepseek.com/api_keys" target="_blank" class="text-xs text-blue-500 hover:underline mt-1 inline-block">
+                    前往 DeepSeek 官网获取 API Key <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-[10px]"></i>
+                </a>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
+                <button id="btn-cancel-settings" class="px-5 py-2 text-gray-600 hover:bg-gray-200 rounded-md transition font-medium">取消</button>
+                <button id="btn-save-settings" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition shadow-sm font-medium">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 transform translate-y-20 opacity-0 transition-all z-50">
+        <i class="fa-solid fa-circle-check text-green-400" id="toast-icon"></i>
+        <span id="toast-message">保存成功</span>
+    </div>
+
+    <!-- Include marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
