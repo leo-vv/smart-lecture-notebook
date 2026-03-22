@@ -507,7 +507,7 @@ async function askDeepSeek(question) {
 function renderQaCard(qa) {
     const card = document.createElement('div');
     card.id = qa.id;
-    card.className = 'qa-card bg-white border border-gray-100 rounded-xl p-4 shadow-sm';
+    card.className = 'qa-card bg-white border border-gray-100 rounded-xl p-4 shadow-sm relative group';
 
     let answerHtml = '';
     if (qa.status === 'loading') {
@@ -521,15 +521,27 @@ function renderQaCard(qa) {
         answerHtml = marked.parse(qa.answer);
     }
 
+    // Check if we should show the detail button
+    // Show only if: status is success AND it's not already a detailed card AND hasn't been clicked before
+    const showDetailBtn = qa.status === 'success' && !qa.isDetailedCard && !qa.hasDetailed;
+    const detailBtnHtml = showDetailBtn ? `
+        <div class="mt-3 flex justify-end">
+            <button class="btn-detail-qa flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors">
+                <i class="fa-solid fa-list-ul"></i>
+                详细一点
+            </button>
+        </div>
+    ` : '';
+
     card.innerHTML = `
         <div class="flex items-start justify-between gap-3 mb-3">
             <div class="flex items-start gap-3 flex-1">
-                <div class="w-7 h-7 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
-                    <i class="fa-solid fa-q text-xs"></i>
+                <div class="w-7 h-7 ${qa.isDetailedCard ? 'bg-indigo-50 text-indigo-600' : 'bg-blue-50 text-blue-600'} rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                    <i class="fa-solid ${qa.isDetailedCard ? 'fa-magnifying-glass' : 'fa-q'} text-xs"></i>
                 </div>
                 <p class="text-gray-800 font-medium leading-relaxed">${qa.question}</p>
             </div>
-            <button class="btn-delete-qa text-gray-400 hover:text-red-500 transition-colors p-1" title="删除该问答">
+            <button class="btn-delete-qa text-gray-300 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100" title="删除该问答">
                 <i class="fa-solid fa-trash-can"></i>
             </button>
         </div>
@@ -537,8 +549,13 @@ function renderQaCard(qa) {
             <div class="w-7 h-7 bg-purple-50 text-purple-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
                 <i class="fa-solid fa-robot text-xs"></i>
             </div>
-            <div class="prose flex-1 text-gray-600 answer-content overflow-hidden">
-                ${answerHtml}
+            <div class="flex-1 overflow-hidden">
+                <div class="prose text-gray-600 answer-content">
+                    ${answerHtml}
+                </div>
+                <div class="detail-btn-container">
+                    ${detailBtnHtml}
+                </div>
             </div>
         </div>
     `;
@@ -549,7 +566,52 @@ function renderQaCard(qa) {
         deleteQaCard(qa.id);
     });
 
+    // Bind detail event
+    if (showDetailBtn) {
+        const detailBtn = card.querySelector('.btn-detail-qa');
+        if (detailBtn) {
+            detailBtn.addEventListener('click', () => {
+                askDetailedAI(qa);
+            });
+        }
+    }
+
     qaContainer.appendChild(card);
+}
+
+// Update existing QA Card
+function updateQaCard(qa) {
+    const card = document.getElementById(qa.id);
+    if (card) {
+        const answerContainer = card.querySelector('.answer-content');
+        if (qa.status === 'error') {
+            answerContainer.innerHTML = `<span class="text-red-500">${qa.answer}</span>`;
+        } else {
+            answerContainer.innerHTML = marked.parse(qa.answer);
+        }
+
+        // Re-evaluate detail button visibility
+        const detailContainer = card.querySelector('.detail-btn-container');
+        if (detailContainer) {
+            const showDetailBtn = qa.status === 'success' && !qa.isDetailedCard && !qa.hasDetailed;
+            if (showDetailBtn) {
+                detailContainer.innerHTML = `
+                    <div class="mt-3 flex justify-end">
+                        <button class="btn-detail-qa flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors">
+                            <i class="fa-solid fa-list-ul"></i>
+                            详细一点
+                        </button>
+                    </div>
+                `;
+                const detailBtn = detailContainer.querySelector('.btn-detail-qa');
+                detailBtn.addEventListener('click', () => {
+                    askDetailedAI(qa);
+                });
+            } else {
+                detailContainer.innerHTML = '';
+            }
+        }
+    }
 }
 
 // Delete QA Card
@@ -570,17 +632,107 @@ function deleteQaCard(id) {
     }
 }
 
-// Update existing QA Card
-function updateQaCard(qa) {
-    const card = document.getElementById(qa.id);
-    if (card) {
-        const answerContainer = card.querySelector('.answer-content');
-        if (qa.status === 'error') {
-            answerContainer.innerHTML = `<span class="text-red-500">${qa.answer}</span>`;
-        } else {
-            answerContainer.innerHTML = marked.parse(qa.answer);
-        }
+// Ask Detailed AI
+async function askDetailedAI(originalQa) {
+    if (!aiConfig.apiKey) {
+        showToast('请先在设置中配置 API Key', 'error');
+        openSettings();
+        return;
     }
+
+    // Mark original as having detailed version and update UI to hide button
+    originalQa.hasDetailed = true;
+    saveState();
+    updateQaCard(originalQa);
+
+    // Create a new QA object for the detailed answer
+    const detailedQaId = 'qa_detail_' + Date.now();
+    const detailedQa = {
+        id: detailedQaId,
+        question: `关于：“${originalQa.question}”的详细解答`,
+        answer: '',
+        status: 'loading',
+        isDetailedCard: true
+    };
+    
+    qaHistory.push(detailedQa);
+    saveState();
+    
+    // Render the loading card
+    renderQaCard(detailedQa);
+    scrollToBottom(qaContainer);
+
+    try {
+        const response = await fetch(aiConfig.baseUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${aiConfig.apiKey}`
+            },
+            body: JSON.stringify({
+                model: aiConfig.model,
+                messages: [
+                    {
+                        role: 'system',
+                        content: '你是一个大学课堂助手。请对用户的问题进行补充解答。提供核心原理和1-2个简短的例子，条理清晰，但请控制在 500 字左右，不要长篇大论。使用 Markdown 格式排版。'
+                    },
+                    {
+                        role: 'user',
+                        content: originalQa.question
+                    }
+                ],
+                stream: true,
+                max_tokens: 1500
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error?.message || '请求失败');
+        }
+
+        // Change status from loading to success so we can start rendering text
+        detailedQa.status = 'success';
+        detailedQa.answer = ''; // Clear loading state
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let done = false;
+
+        while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+                const chunk = decoder.decode(value, { stream: true });
+                // Parse SSE events
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.choices && data.choices[0].delta && data.choices[0].delta.content) {
+                                detailedQa.answer += data.choices[0].delta.content;
+                                updateQaCard(detailedQa);
+                                scrollToBottom(qaContainer);
+                            }
+                        } catch (e) {
+                            console.warn('Error parsing stream chunk', e);
+                        }
+                    }
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('API Error:', error);
+        detailedQa.answer = `错误: ${error.message}`;
+        detailedQa.status = 'error';
+    }
+
+    // Final save after stream is complete
+    saveState();
+    updateQaCard(detailedQa);
+    scrollToBottom(qaContainer);
 }
 
 // --- Modals & UI interactions ---
