@@ -32,6 +32,11 @@
                 <span id="text-record">开始录音</span>
             </button>
             
+            <button id="btn-toggle-correct" class="flex items-center gap-2 px-4 py-2 bg-white hover:bg-purple-50 text-gray-700 rounded-md transition-colors font-medium border border-gray-200 shadow-sm" title="开启后，AI会自动修正语音识别中的专业名词错误">
+                <i class="fa-solid fa-wand-magic-sparkles text-gray-400" id="icon-correct"></i>
+                <span id="text-correct">AI 纠错: 关</span>
+            </button>
+            
             <button id="btn-export" class="flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 rounded-md transition-colors font-medium border border-gray-200 shadow-sm">
                 <i class="fa-solid fa-download"></i>
                 导出笔记
@@ -141,6 +146,18 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">模型名称 (Model)</label>
                         <input type="text" id="input-model" placeholder="deepseek-chat" class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-mono text-sm">
+                    </div>
+                </div>
+
+                <!-- Correction Preferences -->
+                <div class="space-y-4 pt-2 border-t border-gray-100">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-graduation-cap text-purple-500"></i>
+                            当前课程专业 / 方向 (选填)
+                        </label>
+                        <input type="text" id="input-major" placeholder="例如：细胞生物学、高等数学、刑法学..." class="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition text-sm">
+                        <p class="text-xs text-gray-500 mt-1.5">填写专业有助于 AI 纠错功能更准确地修复专有名词。</p>
                     </div>
                 </div>
 

@@ -25,11 +25,17 @@ const selectProvider = document.getElementById('select-provider');
 const inputApiKey = document.getElementById('input-api-key');
 const inputBaseUrl = document.getElementById('input-base-url');
 const inputModel = document.getElementById('input-model');
+const inputMajor = document.getElementById('input-major');
 const providerLink = document.getElementById('provider-link');
 const providerLinkContainer = document.getElementById('provider-link-container');
 const advancedSettings = document.getElementById('advanced-settings');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toast-message');
+
+// Toggle Correct Elements
+const btnToggleCorrect = document.getElementById('btn-toggle-correct');
+const iconCorrect = document.getElementById('icon-correct');
+const textCorrect = document.getElementById('text-correct');
 
 // State
 let isRecording = false;
@@ -37,6 +43,11 @@ let recognition = null;
 let finalTranscript = ''; // Note: with contenteditable, this will be synchronized with DOM
 let qaHistory = [];
 let highlightTimers = {}; // Store timers for question highlights
+let isAutoCorrectEnabled = localStorage.getItem('auto_correct_enabled') === 'true';
+
+// Correction Queue State
+let correctionQueue = [];
+let isCorrecting = false;
 
 // AI Configuration
 const AI_PROVIDERS = {
@@ -64,7 +75,8 @@ let aiConfig = {
     provider: 'deepseek',
     apiKey: '',
     baseUrl: AI_PROVIDERS.deepseek.baseUrl,
-    model: AI_PROVIDERS.deepseek.model
+    model: AI_PROVIDERS.deepseek.model,
+    major: ''
 };
 
 // Load initial state from local storage
@@ -86,6 +98,8 @@ function loadState() {
             localStorage.removeItem('deepseek_api_key');
         }
     }
+    
+    updateCorrectUI();
     const savedText = localStorage.getItem('lecture_text');
     if (savedText) {
         finalTextEl.innerHTML = savedText; // Use innerHTML to preserve spans if any
@@ -186,8 +200,6 @@ function initSpeechRecognition() {
                     
                     // Append to DOM directly to maintain HTML
                     if (isEditing) {
-                        // If user is editing, we just append to the end anyway for simplicity in this version, 
-                        // but ideally we'd insert at cursor. For robustness in dictation, append to end.
                         finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
                     } else {
                         finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
@@ -198,8 +210,19 @@ function initSpeechRecognition() {
                     
                 } else {
                     // Normal text
-                    const textNode = document.createTextNode(text);
-                    finalTextEl.appendChild(textNode);
+                    if (isAutoCorrectEnabled) {
+                        // Create a correction chunk
+                        const chunkId = 'chunk_' + Date.now() + Math.floor(Math.random() * 1000);
+                        const wrappedText = `<span id="${chunkId}" class="correcting-text">${text}</span>`;
+                        finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
+                        
+                        // Push to correction queue
+                        correctionQueue.push({ id: chunkId, text: text });
+                        processCorrectionQueue();
+                    } else {
+                        const textNode = document.createTextNode(text);
+                        finalTextEl.appendChild(textNode);
+                    }
                 }
                 
                 finalTranscript = finalTextEl.innerText;
@@ -304,6 +327,120 @@ function updateRecordUI() {
         recordingStatus.classList.add('hidden');
         recordingStatus.classList.remove('flex');
     }
+}
+
+// Toggle Auto Correct
+function toggleAutoCorrect() {
+    isAutoCorrectEnabled = !isAutoCorrectEnabled;
+    localStorage.setItem('auto_correct_enabled', isAutoCorrectEnabled);
+    updateCorrectUI();
+    if (isAutoCorrectEnabled) {
+        showToast('AI 实时纠错已开启');
+    } else {
+        showToast('AI 实时纠错已关闭');
+    }
+}
+
+function updateCorrectUI() {
+    if (isAutoCorrectEnabled) {
+        btnToggleCorrect.classList.remove('bg-white', 'text-gray-700', 'border-gray-200');
+        btnToggleCorrect.classList.add('bg-purple-50', 'text-purple-700', 'border-purple-200');
+        iconCorrect.classList.remove('text-gray-400');
+        iconCorrect.classList.add('text-purple-600');
+        textCorrect.textContent = 'AI 纠错: 开';
+    } else {
+        btnToggleCorrect.classList.add('bg-white', 'text-gray-700', 'border-gray-200');
+        btnToggleCorrect.classList.remove('bg-purple-50', 'text-purple-700', 'border-purple-200');
+        iconCorrect.classList.add('text-gray-400');
+        iconCorrect.classList.remove('text-purple-600');
+        textCorrect.textContent = 'AI 纠错: 关';
+    }
+}
+
+// Process Correction Queue
+async function processCorrectionQueue() {
+    if (isCorrecting || correctionQueue.length === 0) return;
+    
+    isCorrecting = true;
+    const chunk = correctionQueue.shift();
+    
+    // Check if the element still exists (user might have cleared it)
+    const el = document.getElementById(chunk.id);
+    if (!el) {
+        isCorrecting = false;
+        processCorrectionQueue();
+        return;
+    }
+
+    try {
+        if (!aiConfig.apiKey || !aiConfig.baseUrl || !aiConfig.model) {
+            throw new Error('API 配置不完整');
+        }
+
+        const majorContext = aiConfig.major ? `当前课程所属专业/方向是：【${aiConfig.major}】。` : '';
+        const systemPrompt = `你是一个专业的课堂笔记校对助手。${majorContext}请对以下语音识别文本进行校对：修正常见的同音错别字、标点，**特别是要根据上述专业方向修正被错误识别的专业名词**。
+严格要求：只输出校对后的纯文本，绝对不要包含任何解释、Markdown格式或前言后语，不要擅自扩写或删减原意。`;
+
+        const response = await fetch(aiConfig.baseUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${aiConfig.apiKey}`
+            },
+            body: JSON.stringify({
+                model: aiConfig.model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: chunk.text }
+                ],
+                stream: false,
+                temperature: 0.1, // low temp for accurate correction
+                max_tokens: 500
+            })
+        });
+
+        if (!response.ok) throw new Error('API 请求失败');
+        
+        const data = await response.json();
+        let correctedText = data.choices[0].message.content.trim();
+        
+        // Final sanity check: if AI returns empty or something completely weird, keep original
+        if (correctedText.length === 0) correctedText = chunk.text;
+
+        // Replace in DOM
+        const targetEl = document.getElementById(chunk.id);
+        if (targetEl) {
+            // Check if user is actively editing this specific chunk to avoid conflicts
+            const selection = window.getSelection();
+            let isUserEditingChunk = false;
+            if (document.activeElement === finalTextEl && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                if (targetEl.contains(range.commonAncestorContainer)) {
+                    isUserEditingChunk = true;
+                }
+            }
+
+            if (!isUserEditingChunk) {
+                targetEl.textContent = correctedText;
+                targetEl.classList.remove('correcting-text');
+                targetEl.classList.add('corrected-flash');
+                saveState();
+            } else {
+                // Just remove styles if user is editing
+                targetEl.classList.remove('correcting-text');
+            }
+        }
+        
+    } catch (e) {
+        console.error('Correction failed:', e);
+        // Fallback: just remove styling
+        const targetEl = document.getElementById(chunk.id);
+        if (targetEl) targetEl.classList.remove('correcting-text');
+    }
+
+    isCorrecting = false;
+    // Process next in queue after a small delay to avoid rate limits
+    setTimeout(processCorrectionQueue, 500);
 }
 
 // --- Question Extraction & AI Logic ---
@@ -803,6 +940,7 @@ function openSettings() {
     inputApiKey.value = aiConfig.apiKey;
     inputBaseUrl.value = aiConfig.baseUrl;
     inputModel.value = aiConfig.model;
+    inputMajor.value = aiConfig.major || '';
     
     updateSettingsUI();
 
@@ -837,7 +975,8 @@ function saveSettings() {
         provider: provider,
         apiKey: key,
         baseUrl: inputBaseUrl.value.trim(),
-        model: inputModel.value.trim()
+        model: inputModel.value.trim(),
+        major: inputMajor.value.trim()
     };
     
     saveConfig();
@@ -900,6 +1039,7 @@ function exportNotes() {
 
 // Event Listeners
 btnRecord.addEventListener('click', toggleRecording);
+btnToggleCorrect.addEventListener('click', toggleAutoCorrect);
 btnSettings.addEventListener('click', openSettings);
 btnCloseSettings.addEventListener('click', closeSettings);
 btnCancelSettings.addEventListener('click', closeSettings);
