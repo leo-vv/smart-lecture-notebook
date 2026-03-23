@@ -157,16 +157,22 @@ function initSpeechRecognition() {
         let interimTranscript = '';
         emptyStateTranscript.style.display = 'none';
         
-        // Save current cursor position if user is editing
+        // --- Selection & Cursor Protection ---
         const selection = window.getSelection();
-        let cursorNode = null;
-        let cursorOffset = 0;
+        let savedRange = null;
         let isEditing = document.activeElement === finalTextEl;
+        let hasActiveSelection = false;
         
-        if (isEditing && selection.rangeCount > 0) {
+        // If user is selecting text (not just a blinking cursor)
+        if (selection.rangeCount > 0) {
             const range = selection.getRangeAt(0);
-            cursorNode = range.startContainer;
-            cursorOffset = range.startOffset;
+            // Check if it's an actual selection (start != end) OR if they are actively editing
+            if (!range.collapsed) {
+                hasActiveSelection = true;
+                savedRange = range.cloneRange();
+            } else if (isEditing) {
+                savedRange = range.cloneRange();
+            }
         }
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -204,19 +210,20 @@ function initSpeechRecognition() {
 
         interimTextEl.textContent = interimTranscript;
         
-        // Restore cursor if editing
-        if (isEditing && cursorNode && document.body.contains(cursorNode)) {
+        // --- Restore Selection / Cursor ---
+        if (savedRange) {
             try {
-                const range = document.createRange();
-                range.setStart(cursorNode, cursorOffset);
-                range.collapse(true);
                 selection.removeAllRanges();
-                selection.addRange(range);
+                selection.addRange(savedRange);
             } catch(e) {
-                // Ignore if node structure changed too much
+                // Ignore if node structure changed too much and range became invalid
+                console.warn("Failed to restore selection:", e);
             }
-        } else if (!isEditing) {
-            // Only auto-scroll if not actively editing
+        } 
+        
+        // Auto-scroll logic
+        // Only scroll to bottom if user is NOT actively selecting text and NOT actively editing
+        if (!hasActiveSelection && !isEditing) {
             scrollToBottom(transcriptContainer);
         }
         
