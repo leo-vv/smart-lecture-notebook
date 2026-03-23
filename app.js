@@ -39,7 +39,9 @@ const textCorrect = document.getElementById('text-correct');
 
 // State
 let isRecording = false;
-let recognition = null;
+let recognitionA = null;
+let recognitionB = null;
+let currentActiveEngine = 'A'; // 'A' or 'B'
 let finalTranscript = ''; // Note: with contenteditable, this will be synchronized with DOM
 let qaHistory = [];
 let highlightTimers = {}; // Store timers for question highlights
@@ -123,9 +125,27 @@ function loadState() {
     }
 }
 
-// Save state to local storage
-function saveState() {
+// Debounce helper
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Save state to local storage (Debounced to prevent freezing on long lectures)
+const saveState = debounce(() => {
     localStorage.setItem('lecture_text', finalTextEl.innerHTML); // Save HTML to keep highlights
+    localStorage.setItem('lecture_qa', JSON.stringify(qaHistory));
+}, 2000);
+
+function saveStateImmediate() {
+    localStorage.setItem('lecture_text', finalTextEl.innerHTML);
     localStorage.setItem('lecture_qa', JSON.stringify(qaHistory));
 }
 
@@ -148,7 +168,7 @@ function scrollToBottom(el) {
     }
 }
 
-// Initialize Speech Recognition
+// Initialize Speech Recognition (Dual Engine Setup)
 function initSpeechRecognition() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         alert('您的浏览器不支持语音识别，请使用 Chrome 或 Edge 浏览器。');
@@ -156,14 +176,24 @@ function initSpeechRecognition() {
     }
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    recognition = new SpeechRecognition();
+    
+    recognitionA = createRecognitionInstance(SpeechRecognition, 'A');
+    recognitionB = createRecognitionInstance(SpeechRecognition, 'B');
+
+    return true;
+}
+
+function createRecognitionInstance(SpeechRecognition, engineId) {
+    const recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'zh-CN'; // Set language to Chinese
+    recognition.lang = 'zh-CN';
 
     recognition.onstart = () => {
-        isRecording = true;
-        updateRecordUI();
+        if (!isRecording) {
+            isRecording = true;
+            updateRecordUI();
+        }
         if (recordingStatusText) recordingStatusText.textContent = '正在听写...';
     };
 
@@ -180,7 +210,6 @@ function initSpeechRecognition() {
         // If user is selecting text (not just a blinking cursor)
         if (selection.rangeCount > 0) {
             const range = selection.getRangeAt(0);
-            // Check if it's an actual selection (start != end) OR if they are actively editing
             if (!range.collapsed) {
                 hasActiveSelection = true;
                 savedRange = range.cloneRange();
@@ -198,34 +227,27 @@ function initSpeechRecognition() {
                     const highlightId = 'hq_' + Date.now() + Math.floor(Math.random() * 1000);
                     const wrappedText = `<span id="${highlightId}" class="question-highlight" data-question="${text.trim()}">${text}</span>`;
                     
-                    // Append to DOM directly to maintain HTML
-                    if (isEditing) {
-                        finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
-                    } else {
-                        finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
-                    }
-                    
-                    // Bind event and set timer
+                    finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
                     setTimeout(() => setupHighlight(highlightId), 0);
                     
                 } else {
                     // Normal text
                     if (isAutoCorrectEnabled) {
-                        // Create a correction chunk
                         const chunkId = 'chunk_' + Date.now() + Math.floor(Math.random() * 1000);
                         const wrappedText = `<span id="${chunkId}" class="correcting-text">${text}</span>`;
                         finalTextEl.insertAdjacentHTML('beforeend', wrappedText);
                         
-                        // Push to correction queue
                         correctionQueue.push({ id: chunkId, text: text });
                         processCorrectionQueue();
                     } else {
+                        // Batch text nodes for better performance
                         const textNode = document.createTextNode(text);
                         finalTextEl.appendChild(textNode);
                     }
                 }
                 
-                finalTranscript = finalTextEl.innerText;
+                // Don't update finalTranscript from DOM here, it's too slow.
+                // Just let it be updated on 'input' event when user actually edits.
             } else {
                 interimTranscript += event.results[i][0].transcript;
             }
@@ -239,13 +261,10 @@ function initSpeechRecognition() {
                 selection.removeAllRanges();
                 selection.addRange(savedRange);
             } catch(e) {
-                // Ignore if node structure changed too much and range became invalid
                 console.warn("Failed to restore selection:", e);
             }
         } 
         
-        // Auto-scroll logic
-        // Only scroll to bottom if user is NOT actively selecting text and NOT actively editing
         if (!hasActiveSelection && !isEditing) {
             scrollToBottom(transcriptContainer);
         }
@@ -254,7 +273,7 @@ function initSpeechRecognition() {
     };
 
     recognition.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
+        console.error(`Speech recognition error on Engine ${engineId}:`, event.error);
         if (event.error === 'not-allowed') {
             alert('请允许使用麦克风权限。强烈建议您将此应用部署到 GitHub Pages 或本地服务器，以避免每次重连都需要授权。');
             stopRecording();
@@ -264,23 +283,28 @@ function initSpeechRecognition() {
     };
 
     recognition.onend = () => {
-        // If it stopped but we didn't explicitly ask it to stop, restart it (browser limits)
         if (isRecording) {
             if (recordingStatusText) recordingStatusText.textContent = '重连中...';
-            // Add a tiny delay to avoid rapid crash loops in some browsers
-            setTimeout(() => {
-                try {
-                    recognition.start();
-                } catch (e) {
-                    console.error('Re-start error:', e);
-                }
-            }, 100);
+            
+            // Switch engine immediately to minimize gap
+            currentActiveEngine = engineId === 'A' ? 'B' : 'A';
+            const nextEngine = currentActiveEngine === 'A' ? recognitionA : recognitionB;
+            
+            try {
+                nextEngine.start();
+            } catch (e) {
+                console.error('Switch engine start error:', e);
+                // Fallback: try starting it after a tiny delay
+                setTimeout(() => {
+                    try { nextEngine.start(); } catch(err) {}
+                }, 100);
+            }
         } else {
             updateRecordUI();
         }
     };
 
-    return true;
+    return recognition;
 }
 
 // Toggle Recording
@@ -293,11 +317,12 @@ function toggleRecording() {
 }
 
 function startRecording() {
-    if (!recognition) {
+    if (!recognitionA) {
         if (!initSpeechRecognition()) return;
     }
     try {
-        recognition.start();
+        currentActiveEngine = 'A';
+        recognitionA.start();
     } catch (e) {
         console.error(e);
     }
@@ -305,10 +330,10 @@ function startRecording() {
 
 function stopRecording() {
     isRecording = false;
-    if (recognition) {
-        recognition.stop();
-    }
+    if (recognitionA) recognitionA.stop();
+    if (recognitionB) recognitionB.stop();
     updateRecordUI();
+    saveStateImmediate(); // Final save
 }
 
 function updateRecordUI() {
