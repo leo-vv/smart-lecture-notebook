@@ -37,6 +37,11 @@ const btnToggleCorrect = document.getElementById('btn-toggle-correct');
 const iconCorrect = document.getElementById('icon-correct');
 const textCorrect = document.getElementById('text-correct');
 
+// Toggle Auto Question Elements
+const btnToggleAutoQuestion = document.getElementById('btn-toggle-auto-question');
+const iconAutoQuestion = document.getElementById('icon-auto-question');
+const textAutoQuestion = document.getElementById('text-auto-question');
+
 // State
 let isRecording = false;
 let recognitionA = null;
@@ -46,6 +51,8 @@ let finalTranscript = ''; // Note: with contenteditable, this will be synchroniz
 let qaHistory = [];
 let highlightTimers = {}; // Store timers for question highlights
 let isAutoCorrectEnabled = localStorage.getItem('auto_correct_enabled') === 'true';
+// Default to true if not set
+let isAutoQuestionEnabled = localStorage.getItem('auto_question_enabled') !== 'false';
 
 // Correction Queue State
 let correctionQueue = [];
@@ -102,6 +109,7 @@ function loadState() {
     }
     
     updateCorrectUI();
+    updateAutoQuestionUI();
     const savedText = localStorage.getItem('lecture_text');
     if (savedText) {
         finalTextEl.innerHTML = savedText; // Use innerHTML to preserve spans if any
@@ -223,7 +231,7 @@ function createRecognitionInstance(SpeechRecognition, engineId) {
                 const text = event.results[i][0].transcript;
                 
                 // Check if it's a question and wrap it
-                if (isTeacherQuestion(text)) {
+                if (isAutoQuestionEnabled && isTeacherQuestion(text)) {
                     const highlightId = 'hq_' + Date.now() + Math.floor(Math.random() * 1000);
                     const wrappedText = `<span id="${highlightId}" class="question-highlight" data-question="${text.trim()}">${text}</span>`;
                     
@@ -382,6 +390,34 @@ function updateCorrectUI() {
     }
 }
 
+// Toggle Auto Question
+function toggleAutoQuestion() {
+    isAutoQuestionEnabled = !isAutoQuestionEnabled;
+    localStorage.setItem('auto_question_enabled', isAutoQuestionEnabled);
+    updateAutoQuestionUI();
+    if (isAutoQuestionEnabled) {
+        showToast('自动提取问题已开启');
+    } else {
+        showToast('自动提取问题已关闭');
+    }
+}
+
+function updateAutoQuestionUI() {
+    if (isAutoQuestionEnabled) {
+        btnToggleAutoQuestion.classList.remove('bg-white', 'text-gray-700', 'border-gray-200');
+        btnToggleAutoQuestion.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-200');
+        iconAutoQuestion.classList.remove('text-gray-400');
+        iconAutoQuestion.classList.add('text-blue-500');
+        textAutoQuestion.textContent = '自动提问: 开';
+    } else {
+        btnToggleAutoQuestion.classList.add('bg-white', 'text-gray-700', 'border-gray-200');
+        btnToggleAutoQuestion.classList.remove('bg-blue-50', 'text-blue-700', 'border-blue-200');
+        iconAutoQuestion.classList.add('text-gray-400');
+        iconAutoQuestion.classList.remove('text-blue-500');
+        textAutoQuestion.textContent = '自动提问: 关';
+    }
+}
+
 // Process Correction Queue
 async function processCorrectionQueue() {
     if (isCorrecting || correctionQueue.length === 0) return;
@@ -474,8 +510,8 @@ async function processCorrectionQueue() {
 function isTeacherQuestion(text) {
     const cleanText = text.trim();
     
-    // 1. Length Filter: Ignore very short phrases (usually filler words like "对吧", "是不是")
-    if (cleanText.length <= 4) {
+    // 1. Length Filter: Ignore very short phrases (usually filler words like "对吧")
+    if (cleanText.length <= 2) {
         return false;
     }
 
@@ -483,7 +519,8 @@ function isTeacherQuestion(text) {
     // Strong question keywords that almost always indicate a question when used in a sentence
     const strongKeywords = [
         "为什么", "如何", "怎么", "请解释", "什么原因", 
-        "区别是什么", "有何不同", "哪几种", "什么是", "举个例子"
+        "区别是什么", "有何不同", "哪几种", "什么是", "举个例子",
+        "是什么意思", "有哪些", "怎么理解", "如何判断", "怎么看"
     ];
     
     // Guiding keywords often used by teachers
@@ -500,7 +537,7 @@ function isTeacherQuestion(text) {
     const hasQuestionMark = cleanText.match(/[?？]$/) || cleanText.match(/吗[。，,.]$/);
 
     // 4. Exclusion list for common rhetorical/filler phrases even if they are long enough
-    const isExcluded = cleanText.match(/^(听懂了吗|对不对|是不是|对吧|能理解吗)[。，,.?？]*$/);
+    const isExcluded = cleanText.match(/^(听懂了吗|对不对|是不是|对吧|能理解吗|明白了吗|好不好|可以吗|没问题吧)[。，,.?？]*$/);
 
     if (isExcluded) {
         return false;
@@ -1065,6 +1102,7 @@ function exportNotes() {
 // Event Listeners
 btnRecord.addEventListener('click', toggleRecording);
 btnToggleCorrect.addEventListener('click', toggleAutoCorrect);
+btnToggleAutoQuestion.addEventListener('click', toggleAutoQuestion);
 btnSettings.addEventListener('click', openSettings);
 btnCloseSettings.addEventListener('click', closeSettings);
 btnCancelSettings.addEventListener('click', closeSettings);
